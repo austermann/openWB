@@ -21,20 +21,60 @@
 # TODO @KevinW suntrol host konfigurierbar machen
 suntrol_host=192.168.178.51
 
-wattwr=$(curl --connect-timeout 10 -s http://${suntrol_host}/min_cur.js?nocache | grep "var Pac=" | sed 's/var Pac=//' | sed 's/[^0-9]*//g')
+currenttime=$(date +%H:%M)
+if [[ "$currenttime" > "22:00" ]] || [[ "$currenttime" < "04:00" ]]; then
 
-re='^-?[0-9]+$'
+  # let  suntrol sleep...
+  wattwr="0"
+  echo $wattwr
+  echo $wattwr > /var/www/html/openWB/ramdisk/pvwatt
 
-if ! [[ $wattwr =~ $re ]] ; then
-	wattwr="0"
+else
+
+  #
+  # fill pvwatt
+  #
+
+  wattwr=$(curl --connect-timeout 10 -s http://${suntrol_host}/min_cur.js?nocache | grep "var Pac=" | sed 's/var Pac=//' | sed 's/[^0-9]*//g')
+
+  re='^-?[0-9]+$'
+
+  if ! [[ $wattwr =~ $re ]] ; then
+    wattwr="0"
+  fi
+
+  if (( wattwr > 3 )); then
+    wattwr=$(( wattwr * -1 ))
+  fi
+
+  echo $wattwr
+  echo $wattwr > /var/www/html/openWB/ramdisk/pvwatt
+
+  #
+  # fill pvkwh
+  #
+
+  e_sum_wh=0
+  re_only_digits='[0-9]+'
+
+  readarray e_year_wh < <(curl --connect-timeout 10 -s http://${suntrol_host}/years.js?nocache | grep "ye\[yx" | sed 's/ye.*|//g' | sed 's/"//g' | sed 's/[^0-9]*//g')
+
+  for e in "${e_year_wh[@]}"
+  do
+    if [[ $e =~ $re_only_digits ]] ; then
+      ((e_sum_wh += $e))
+    fi
+  done
+
+  if (( $e_sum_wh > 0)); then
+    e_today_wh=$(curl --connect-timeout 10 -s http://${suntrol_host}/days.js?nocache | grep "da\[dx" | sed 's/da.*|//' | sed 's/;.*//g' | sed 's/[^0-9]*//g')
+
+    if [[ $e_today_wh =~ $re_only_digits ]] ; then
+      ((e_sum_wh += $e_today_wh))
+      echo $e_sum_wh
+      echo $e_sum_wh > /var/www/html/openWB/ramdisk/pvkwh
+    fi
+
+  fi
+
 fi
-
-if (( wattwr > 3 )); then
-	wattwr=$(( wattwr * -1 ))
-fi
-
-echo $wattwr
-echo $wattwr > /var/www/html/openWB/ramdisk/pvwatt
-
-# TODO fill $pvkwhk
-# echo $pvkwhk > /var/www/html/openWB/ramdisk/pvkwhk
